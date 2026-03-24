@@ -18,14 +18,12 @@ class AuthController extends Controller
     {
         $data = $request->validated();
         $data['password'] = Hash::make($data['password']);
-        $user = User::create($data);    
-
-        $token = $user->createToken('api-token')->plainTextToken;
+        $data['role'] = 'client';
+        $user = User::create($data);
 
         return response()->json([
             'success' => true,
             'message' => 'Utilisateur créé avec succès',
-            'token' => $token,
             'user' => $user,
         ], 201);
     }

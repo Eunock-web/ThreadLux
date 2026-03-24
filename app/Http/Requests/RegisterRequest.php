@@ -28,7 +28,18 @@ class RegisterRequest extends FormRequest
             'email' => ['required', 'email', 'unique:users,email'],
             'phone' => ['nullable', 'string', 'max:30'],
             'country' => ['nullable', 'string', 'max:100'],
+            'avatarUrl' => ['nullable','string'],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
+        ];
+    }
+
+
+    public function messages() : array
+    {
+        return [
+            'firstname.required' => 'The firstname is required',
+            'firstname.string' => 'The firstname must be a string',
+            'firstname.max:255' => 'The firstname must be more than 255'
         ];
     }
 }
