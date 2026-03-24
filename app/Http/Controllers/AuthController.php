@@ -7,7 +7,6 @@ use App\Http\Requests\RegisterRequest;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 
 class AuthController extends Controller
@@ -19,7 +18,7 @@ class AuthController extends Controller
     {
         $data = $request->validated();
         $data['password'] = Hash::make($data['password']);
-        $user = User::create($data);
+        $user = User::create($data);    
 
         $token = $user->createToken('api-token')->plainTextToken;
 
@@ -65,11 +64,11 @@ class AuthController extends Controller
      */
     public function logout(Request $request): JsonResponse
     {
-        $request->user()->currentAccessToken()->delete();
+        $request->user()->currentAccessToken()->delete;
 
         return response()->json([
             'success' => true,
             'message' => 'Déconnexion réussie',
         ]);
- }
+    }
 }

@@ -21,6 +21,8 @@ class User extends Authenticatable
         'firstname',
         'lastname',
         'email',
+        'role',
+        'avatarUrl',
         'phone',
         'country',
         'password',
@@ -47,5 +49,55 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    public function addresses()
+    {
+        return $this->hasMany(Address::class);
+    }
+
+    public function paniers()
+    {
+        return $this->hasMany(Panier::class, 'acheteur_id');
+    }
+
+    public function commandesAchetees()
+    {
+        return $this->hasMany(Commande::class, 'acheteur_id');
+    }
+
+    public function commandesVendues()
+    {
+        return $this->hasMany(Commande::class, 'vendeur_id');
+    }
+
+    public function transactionsAcheteur()
+    {
+        return $this->hasMany(Transaction::class, 'acheteur_id');
+    }
+
+    public function transactionsVendeur()
+    {
+        return $this->hasMany(Transaction::class, 'vendeur_id');
+    }
+
+    public function avis()
+    {
+        return $this->hasMany(Avis::class);
+    }
+
+    public function favoris()
+    {
+        return $this->hasMany(Favori::class);
+    }
+
+    public function litigesInitie()
+    {
+        return $this->hasMany(Litige::class, 'initiateur_id');
+    }
+
+    public function litigesGeres()
+    {
+        return $this->hasMany(Litige::class, 'admin_id');
     }
 }

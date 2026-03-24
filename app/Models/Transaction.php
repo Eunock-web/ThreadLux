@@ -2,48 +2,55 @@
 
 namespace App\Models;
 
+use App\Models\Commande;
+use App\Models\Log;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Model;
 
 class Transaction extends Model
 {
+    /** @use HasFactory<\Database\Factories\TransactionFactory> */
     use HasFactory;
 
-    protected $table = 'transaction';
-
     protected $fillable = [
-        'user_id',
-        'product_id',
+        'reference',
+        'acheteur_id',
+        'vendeur_id',
+        'commande_id',
         'amount',
         'currency',
-        'description',
-        'methode_paiement',
+        'payment_method',
+        'provider',
+        'provider_ref',
         'status',
-        'fedapay_id',
+        'escrow_status',
+        'escrow_held_at',
+        'escrow_released_at',
+        'description',
     ];
 
-    /**
-     * The product associated with this transaction.
-     */
-    public function product(): BelongsTo
+    protected $casts = [
+        'escrow_held_at' => 'datetime',
+        'escrow_released_at' => 'datetime',
+    ];
+
+    public function acheteur()
     {
-        return $this->belongsTo(Product::class);
+        return $this->belongsTo(User::class, 'acheteur_id');
     }
 
-    /**
-     * The user who initiated the transaction.
-     */
-    public function user(): BelongsTo
+    public function vendeur()
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class, 'vendeur_id');
     }
 
-    /**
-     * The logs linked to this transaction.
-     */
-    public function logs(): HasMany
+    public function commande()
+    {
+        return $this->belongsTo(Commande::class);
+    }
+
+    public function logs()
     {
         return $this->hasMany(Log::class);
     }

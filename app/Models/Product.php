@@ -2,35 +2,56 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Model;
 
 class Product extends Model
 {
-    use HasFactory;
-
     protected $fillable = [
         'user_id',
+        'categorie_id',
         'name',
-        'price',
         'description',
+        'slug',
+        'promo',
+        'prix',
+        'origine',
+        'coupe',
+        'hasVariants',
+        'stock_global'
     ];
 
-    /**
-     * The transactions for this product.
-     */
-    public function transactions(): HasMany
+    public function category()
     {
-        return $this->hasMany(Transaction::class);
+        return $this->belongsTo(Categorie::class, 'categorie_id');
     }
 
-    /**
-     * The user who owns this product.
-     */
-    public function user(): BelongsTo
+    public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function variants()
+    {
+        return $this->hasMany(ProductVariants::class);
+    }
+
+    public function paniers()
+    {
+        return $this->hasMany(Panier::class, 'produit_id');
+    }
+
+    public function commandeItems()
+    {
+        return $this->hasMany(CommandeItem::class, 'produit_id');
+    }
+
+    public function avis()
+    {
+        return $this->hasMany(Avis::class, 'produit_id');
+    }
+
+    public function favoris()
+    {
+        return $this->hasMany(Favori::class, 'produit_id');
     }
 }
