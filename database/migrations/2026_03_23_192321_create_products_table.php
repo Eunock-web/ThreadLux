@@ -18,7 +18,7 @@ return new class extends Migration
             $table->string('name');
             $table->string('description');
             $table->string('slug')->nullable();
-            $table->decimal('promo',10,2);
+            $table->decimal('promo',10,2)->nullable();
             $table->decimal('prix', 10,2);
             $table->string('origine');
             $table->string('coupe');

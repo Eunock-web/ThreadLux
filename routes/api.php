@@ -1,8 +1,6 @@
 <?php
 
 use App\Http\Controllers\AuthController;
-use App\Http\Controllers\TransactionController;
-use App\Http\Controllers\WebhookController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -14,12 +12,6 @@ use Illuminate\Support\Facades\Route;
 
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
-
-// FedaPay webhook — must NOT be behind auth (called by FedaPay servers)
-Route::post('/fedapay/webhook', [WebhookController::class, 'webhook']);
-
-// Callback after a hosted-page payment redirect
-Route::get('/callback/{transactionId}', [TransactionController::class, 'callBack']);
 
 /*
  * |--------------------------------------------------------------------------
@@ -36,6 +28,4 @@ Route::middleware('auth:sanctum')->group(function () {
         return $request->user();
     });
 
-    // Payments
-    Route::post('/transaction/{produitId}', [TransactionController::class, 'makeTransactionWithoutRedirection']);
 });
