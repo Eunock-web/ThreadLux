@@ -14,8 +14,7 @@ class TransactionSeeder extends Seeder
     {
         \App\Models\User::all()->each(function ($user) {
             \App\Models\Transaction::factory(5)->create([
-                'user_id' => $user->id,
-                'product_id' => \App\Models\Product::all()->random()->id,
+                'acheteur_id' => $user->id,
             ]);
         });
     }

@@ -20,10 +20,12 @@ class AuthController extends Controller
         $data['password'] = Hash::make($data['password']);
         $data['role'] = 'client';
         $user = User::create($data);
+        $token = $user->createToken('api-token')->plainTextToken;
 
         return response()->json([
             'success' => true,
             'message' => 'Utilisateur créé avec succès',
+            'token' => $token,
             'user' => $user,
         ], 201);
     }

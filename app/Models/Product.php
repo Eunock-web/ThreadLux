@@ -2,10 +2,13 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class Product extends Model
 {
+    use HasFactory;
+
     protected $fillable = [
         'user_id',
         'categorie_id',
@@ -53,5 +56,10 @@ class Product extends Model
     public function favoris()
     {
         return $this->hasMany(Favori::class, 'produit_id');
+    }
+
+    public function images()
+    {
+        return $this->hasMany(productImage::class, 'product_id');
     }
 }

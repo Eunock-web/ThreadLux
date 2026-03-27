@@ -13,6 +13,10 @@ use Illuminate\Support\Facades\Route;
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 
+Route::get('/products', [\App\Http\Controllers\products\ProductController::class, 'index']);
+Route::get('/products/{product}', [\App\Http\Controllers\products\ProductController::class, 'getProduct']);
+Route::get('/categories', [\App\Http\Controllers\CategorieController::class, 'index']);
+
 /*
  * |--------------------------------------------------------------------------
  * | Protected routes (Sanctum token required)
@@ -28,4 +32,13 @@ Route::middleware('auth:sanctum')->group(function () {
         return $request->user();
     });
 
+    // Products (Protected methods)
+    Route::apiResource('products', \App\Http\Controllers\products\ProductController::class)->except(['index', 'show']);
+
+    // Favoris
+    Route::post('/favoris/{variantId}', [\App\Http\Controllers\products\FavorisController::class, 'addFavoris']);
+    Route::delete('/favoris/{variantId}', [\App\Http\Controllers\products\FavorisController::class, 'removeFavoris']);
+    Route::get('/favoris', [\App\Http\Controllers\products\FavorisController::class, 'getFavoris']);
+
+    // Categories (Could be protected if you want to add more, but for now it's public)
 });
