@@ -11,10 +11,16 @@ use Illuminate\Support\Facades\Auth;
 
 class ProductController extends Controller
 {
-    public function index()
+    public function index(\Illuminate\Http\Request $request)
     {
         try {
-            $products = Product::with(['images', 'variants', 'category'])->get();
+            $query = Product::with(['images', 'variants', 'category']);
+
+            if ($request->has('category_id') && $request->category_id !== '') {
+                $query->where('categorie_id', $request->category_id);
+            }
+
+            $products = $query->get();
 
             return response()->json([
                 'success' => true,
@@ -29,7 +35,7 @@ class ProductController extends Controller
         }
     }
 
-    public function addProduct(ProductRequest $request)
+    public function store(ProductRequest $request)
     {
         try {
             $validatedData = $request->validated();
@@ -71,7 +77,7 @@ class ProductController extends Controller
         }
     }
 
-    public function updateProduct(ProductRequest $request, $productId)
+    public function update(ProductRequest $request, $productId)
     {
         try {
             $product = Product::findOrFail($productId);
@@ -116,7 +122,7 @@ class ProductController extends Controller
         }
     }
 
-    public function deleteProduct($productId)
+    public function destroy($productId)
     {
         try {
             $product = Product::find($productId);

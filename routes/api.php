@@ -17,6 +17,10 @@ Route::get('/products', [\App\Http\Controllers\products\ProductController::class
 Route::get('/products/{product}', [\App\Http\Controllers\products\ProductController::class, 'getProduct']);
 Route::get('/categories', [\App\Http\Controllers\CategorieController::class, 'index']);
 
+// Payment verification — public because guests can checkout without an account
+// Security is ensured server-side by contacting FedaPay with the SECRET key
+Route::post('/payment/verify', [\App\Http\Controllers\TransactionController::class, 'verify']);
+
 /*
  * |--------------------------------------------------------------------------
  * | Protected routes (Sanctum token required)
@@ -40,5 +44,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/favoris/{variantId}', [\App\Http\Controllers\products\FavorisController::class, 'removeFavoris']);
     Route::get('/favoris', [\App\Http\Controllers\products\FavorisController::class, 'getFavoris']);
 
-    // Categories (Could be protected if you want to add more, but for now it's public)
+    // Categories (Protected methods)
+    Route::apiResource('categories', \App\Http\Controllers\CategorieController::class)->except(['index', 'show']);
 });
+
+/*
+ * |--------------------------------------------------------------------------
+ * | Webhook routes (public — NOT behind auth, but verified by signature)
+ * |--------------------------------------------------------------------------
+ */
+Route::post('/webhook/fedapay', [\App\Http\Controllers\WebhookController::class, 'handle']);
