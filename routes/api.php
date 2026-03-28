@@ -46,6 +46,12 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Categories (Protected methods)
     Route::apiResource('categories', \App\Http\Controllers\CategorieController::class)->except(['index', 'show']);
+
+    // Escrow / Payouts (Sellers only)
+    Route::prefix('seller/escrow')->group(function () {
+        Route::get('/pending', [\App\Http\Controllers\EscrowController::class, 'index']);
+        Route::post('/release/{transactionId}', [\App\Http\Controllers\EscrowController::class, 'release']);
+    });
 });
 
 /*

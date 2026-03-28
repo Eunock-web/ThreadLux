@@ -28,14 +28,23 @@ class TransactionController extends Controller
             // 2. Retrieve the REAL status from FedaPay (security - never trust the client)
             $fedaTransaction = FedaTransaction::retrieve($transactionId);
 
+            // 3. Find Seller and Calculate Escrow
+            $cartItems = $request->input('cart', []);
+            $vendeurId = null;
+            if (!empty($cartItems)) {
+                $firstProduct = \App\Models\Product::find($cartItems[0]['id']);
+                $vendeurId = $firstProduct ? $firstProduct->user_id : null;
+            }
+
             Log::info('FedaPay verify response', [
                 'transaction_id' => $transactionId,
                 'status' => $fedaTransaction->status,
                 'amount' => $fedaTransaction->amount,
                 'customer_email' => $customerEmail,
+                'vendeur_id' => $vendeurId,
             ]);
 
-            // 3. Persist the transaction (best-effort — won't block checkout on DB error)
+            // 4. Persist the transaction (best-effort — won't block checkout on DB error)
             $transaction = null;  // Initialize $transaction to null
             try {
                 $transaction = Transaction::updateOrCreate(
@@ -43,11 +52,14 @@ class TransactionController extends Controller
                     [
                         'reference' => 'TLX-' . strtoupper(substr(md5($transactionId), 0, 8)),
                         'acheteur_id' => auth()->id() ?? null,  // nullable: guest checkout
+                        'vendeur_id' => $vendeurId,
                         'amount' => $fedaTransaction->amount ?? $amount,
                         'currency' => $fedaTransaction->currency->iso ?? 'XOF',
                         'payment_method' => 'mobile_money',
                         'provider' => 'fedapay',
                         'status' => $fedaTransaction->status,
+                        'escrow_status' => ($fedaTransaction->status === 'approved') ? 'held' : 'none',
+                        'escrow_held_at' => ($fedaTransaction->status === 'approved') ? now() : null,
                         'description' => "Commande client: {$customerEmail}",
                     ]
                 );
@@ -61,8 +73,37 @@ class TransactionController extends Controller
             }
 
             if ($fedaTransaction->status === 'approved') {
-                // 4. Additional actions on success (order creation, stock decrement, email, etc.)
-                Log::info('Payment approved - Transaction saved', ['transaction_db_id' => $transaction ? $transaction->id : 'N/A']);
+                // 5. Create Commande Record
+                try {
+                    $commande = \App\Models\Commande::create([
+                        'reference' => 'ORD-' . strtoupper(substr(uniqid(), -8)),
+                        'acheteur_id' => auth()->id() ?? null,
+                        'vendeur_id' => $vendeurId,
+                        'montant_total' => $fedaTransaction->amount ?? $amount,
+                        'status' => 'paid',
+                        'escrow_status' => 'held',
+                    ]);
+
+                    if ($transaction) {
+                        $transaction->update(['commande_id' => $commande->id]);
+                    }
+
+                    // Create items
+                    foreach ($cartItems as $item) {
+                        $p = \App\Models\Product::find($item['id']);
+                        \App\Models\CommandeItem::create([
+                            'commande_id' => $commande->id,
+                            'produit_id' => $item['id'],
+                            'nom_produit' => $p ? $p->name : 'Produit inconnu',
+                            'qte' => $item['quantity'],
+                            'prix_unitaire' => $p ? $p->prix : 0,
+                            'prix_total' => $p ? ($p->prix * $item['quantity']) : 0,
+                        ]);
+                    }
+                    Log::info('Commande created successfully', ['commande_id' => $commande->id]);
+                } catch (\Exception $cmdErr) {
+                    Log::error('Commande creation failed', ['error' => $cmdErr->getMessage()]);
+                }
 
                 return response()->json([
                     'success' => true,
@@ -88,4 +129,9 @@ class TransactionController extends Controller
             ], 500);
         }
     }
+
+    public function Payout(){
+        
+    }
+
 }
