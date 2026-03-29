@@ -1,0 +1,123 @@
+openapi: 3.0.0
+info:
+  title: ThreadLux API
+  description: API de gestion de la marketplace ThreadLux avec système d'escrow intégré.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8000/api
+    description: Serveur de développement local
+
+components:
+  securitySchemes:
+    Sanctum:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Product:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        prix: { type: number }
+        description: { type: string }
+        user_id: { type: integer }
+
+    Transaction:
+      type: object
+      properties:
+        id: { type: integer }
+        reference: { type: string }
+        amount: { type: number }
+        status: { type: string }
+        escrow_status: { type: string, enum: [held, released, none] }
+
+paths:
+  /register:
+    post:
+      summary: Inscription d'un nouvel utilisateur
+      tags: [Auth]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [firstName, lastName, email, password]
+              properties:
+                firstName: { type: string }
+                lastName: { type: string }
+                email: { type: string }
+                password: { type: string }
+                phone: { type: string }
+      responses:
+        201:
+          description: Utilisateur créé
+
+  /login:
+    post:
+      summary: Connexion utilisateur
+      tags: [Auth]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        200:
+          description: Token généré
+
+  /products:
+    get:
+      summary: Liste des produits
+      tags: [Catalog]
+      responses:
+        200:
+          description: Liste de produits
+
+  /payment/verify:
+    post:
+      summary: Vérification d'un paiement FedaPay (Escrow)
+      tags: [Payment]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [transaction_id]
+              properties:
+                transaction_id: { type: integer }
+                customer_email: { type: string }
+                cart: { type: array, items: { type: object } }
+      responses:
+        200:
+          description: Paiement validé et placé en séquestre
+
+  /seller/escrow/pending:
+    get:
+      summary: Lister les fonds en attente de déblocage (Vendeur)
+      tags: [Escrow]
+      security:
+        - Sanctum: []
+      responses:
+        200:
+          description: Liste des transactions "held"
+
+  /seller/escrow/release/{transactionId}:
+    post:
+      summary: Libérer les fonds vers le compte du vendeur (Payout)
+      tags: [Escrow]
+      security:
+        - Sanctum: []
+      parameters:
+        - name: transactionId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        200:
+          description: Virement initié et fonds débloqués

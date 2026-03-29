@@ -49,8 +49,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Escrow / Payouts (Sellers only)
     Route::prefix('seller/escrow')->group(function () {
-        Route::get('/pending', [\App\Http\Controllers\EscrowController::class, 'index']);
-        Route::post('/release/{transactionId}', [\App\Http\Controllers\EscrowController::class, 'release']);
+        Route::get('/pending', [\App\Http\Controllers\TransactionController::class, 'getPendingPayouts']);
+        Route::post('/release/{transactionId}', [\App\Http\Controllers\TransactionController::class, 'Payout']);
     });
 });
 
