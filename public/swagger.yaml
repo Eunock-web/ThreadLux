@@ -1,123 +1,1031 @@
-openapi: 3.0.0
+openapi: 3.0.3
 info:
   title: ThreadLux API
-  description: API de gestion de la marketplace ThreadLux avec système d'escrow intégré.
-  version: 1.0.0
+  description: |
+    API REST de la marketplace ThreadLux. Gère l'authentification, le catalogue,
+    les commandes, le système d'escrow, les litiges et les webhooks FedaPay.
+
+    **Authentification** : Bearer Token (Laravel Sanctum). Obtenez un token via
+    `POST /login` ou `POST /admin/login`, puis passez-le dans le header :
+    `Authorization: Bearer <token>`
+  version: "1.0.0"
+  contact:
+    name: ThreadLux Dev
+    url: https://github.com/threadlux
+
 servers:
   - url: http://localhost:8000/api
     description: Serveur de développement local
 
 components:
   securitySchemes:
-    Sanctum:
+    sanctumAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+      description: Token Sanctum obtenu via /login ou /admin/login
 
   schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        firstname:
+          type: string
+          example: Jean
+        lastname:
+          type: string
+          example: Dupont
+        email:
+          type: string
+          format: email
+          example: jean@example.com
+        role:
+          type: string
+          enum: [client, vendeur, admin]
+          example: client
+        phone:
+          type: string
+          nullable: true
+          example: "66000001"
+        created_at:
+          type: string
+          format: date-time
+
     Product:
       type: object
       properties:
-        id: { type: integer }
-        name: { type: string }
-        prix: { type: number }
-        description: { type: string }
-        user_id: { type: integer }
+        id:
+          type: integer
+        name:
+          type: string
+          example: T-Shirt Premium
+        description:
+          type: string
+        prix:
+          type: number
+          format: float
+          example: 15000
+        categorie_id:
+          type: integer
+        user_id:
+          type: integer
+          description: ID du vendeur propriétaire
+        images:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductImage'
+        variants:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductVariant'
+        category:
+          $ref: '#/components/schemas/Categorie'
+
+    ProductVariant:
+      type: object
+      properties:
+        id:
+          type: integer
+        product_id:
+          type: integer
+        taille:
+          type: string
+          example: M
+        couleur:
+          type: string
+          example: Noir
+        sku:
+          type: string
+          example: TSH-M-BLK-001
+        stock:
+          type: integer
+          example: 50
+
+    ProductImage:
+      type: object
+      properties:
+        id:
+          type: integer
+        product_id:
+          type: integer
+        url_image:
+          type: string
+          example: https://example.com/img/product.jpg
+        is_principal:
+          type: boolean
+
+    Categorie:
+      type: object
+      properties:
+        id:
+          type: integer
+        nom:
+          type: string
+          example: Vêtements Hommes
 
     Transaction:
       type: object
       properties:
-        id: { type: integer }
-        reference: { type: string }
-        amount: { type: number }
-        status: { type: string }
-        escrow_status: { type: string, enum: [held, released, none] }
+        id:
+          type: integer
+        reference:
+          type: string
+          example: TLX-A1B2C3D4
+        provider_ref:
+          type: string
+          description: ID FedaPay
+          example: "123456"
+        acheteur_id:
+          type: integer
+          nullable: true
+        vendeur_id:
+          type: integer
+          nullable: true
+        amount:
+          type: number
+          example: 25000
+        currency:
+          type: string
+          example: XOF
+        payment_method:
+          type: string
+          example: mobile_money
+        status:
+          type: string
+          description: Statut FedaPay
+          enum: [pending, approved, cancelled, declined]
+        escrow_status:
+          type: string
+          enum: [none, held, released, en_litige, refunded]
+        escrow_held_at:
+          type: string
+          format: date-time
+          nullable: true
+        escrow_released_at:
+          type: string
+          format: date-time
+          nullable: true
+        auto_release_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    Litige:
+      type: object
+      properties:
+        id:
+          type: integer
+        transaction_id:
+          type: integer
+        commande_id:
+          type: integer
+          nullable: true
+        initiateur_id:
+          type: integer
+        admin_id:
+          type: integer
+          nullable: true
+        raison:
+          type: string
+          enum: [non_recu, non_conforme, defectueux, autre]
+        description:
+          type: string
+        status:
+          type: string
+          enum: [ouverte, en_cours, resolue_vendeur, resolue_acheteur, fermee]
+        resolution_note:
+          type: string
+          nullable: true
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    TransactionLog:
+      type: object
+      properties:
+        id:
+          type: integer
+        event_type:
+          type: string
+          enum: [transaction.created, escrow.released, escrow.refunded, litige.opened]
+        status:
+          type: string
+        description:
+          type: string
+        actor:
+          type: string
+        actor_role:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+
+    ApiSuccess:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+
+    ApiError:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+
+    ValidationError:
+      type: object
+      properties:
+        message:
+          type: string
+          example: The given data was invalid.
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+
+tags:
+  - name: Auth
+    description: Inscription et connexion des clients
+  - name: Admin Auth
+    description: Connexion dédiée aux vendeurs et admins
+  - name: Products
+    description: Gestion du catalogue produits
+  - name: Categories
+    description: Gestion des catégories
+  - name: Payment & Escrow
+    description: Vérification de paiement et libération des fonds
+  - name: Litiges
+    description: Gestion des disputes acheteur/vendeur
+  - name: Webhooks
+    description: Réception des événements FedaPay
 
 paths:
+
+  # ─── AUTH ───────────────────────────────────────────────────────────────────
+
   /register:
     post:
-      summary: Inscription d'un nouvel utilisateur
       tags: [Auth]
+      summary: Créer un compte client
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
-              required: [firstName, lastName, email, password]
+              required: [firstname, lastname, email, password]
               properties:
-                firstName: { type: string }
-                lastName: { type: string }
-                email: { type: string }
-                password: { type: string }
-                phone: { type: string }
+                firstname:
+                  type: string
+                  example: Jean
+                lastname:
+                  type: string
+                  example: Dupont
+                email:
+                  type: string
+                  format: email
+                  example: jean@example.com
+                password:
+                  type: string
+                  format: password
+                  minLength: 8
+                  example: "secretpass"
       responses:
-        201:
-          description: Utilisateur créé
+        '201':
+          description: Compte créé
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiSuccess'
+                  - type: object
+                    properties:
+                      token:
+                        type: string
+                        example: "1|abc123..."
+                      user:
+                        $ref: '#/components/schemas/User'
+        '422':
+          description: Données invalides
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
 
   /login:
     post:
-      summary: Connexion utilisateur
       tags: [Auth]
+      summary: Connexion d'un client
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
               required: [email, password]
               properties:
-                email: { type: string }
-                password: { type: string }
+                email:
+                  type: string
+                  format: email
+                  example: jean@example.com
+                password:
+                  type: string
+                  format: password
+                  example: "secretpass"
       responses:
-        200:
-          description: Token généré
+        '200':
+          description: Connexion réussie
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiSuccess'
+                  - type: object
+                    properties:
+                      token:
+                        type: string
+                        example: "2|xyz789..."
+                      user:
+                        $ref: '#/components/schemas/User'
+        '401':
+          description: Identifiants invalides
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /logout:
+    post:
+      tags: [Auth]
+      summary: Déconnexion (révocation du token)
+      security:
+        - sanctumAuth: []
+      responses:
+        '200':
+          description: Déconnexion réussie
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiSuccess'
+        '401':
+          description: Non authentifié
+
+  /user:
+    get:
+      tags: [Auth]
+      summary: Retourne l'utilisateur authentifié
+      security:
+        - sanctumAuth: []
+      responses:
+        '200':
+          description: Utilisateur courant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: Non authentifié
+
+  # ─── ADMIN AUTH ─────────────────────────────────────────────────────────────
+
+  /admin/login:
+    post:
+      tags: [Admin Auth]
+      summary: Connexion vendeur / admin (restreint aux rôles vendeur & admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: vendor@threadlux.com
+                password:
+                  type: string
+                  format: password
+                  example: "vendorpass"
+      responses:
+        '200':
+          description: Connexion vendeur réussie
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiSuccess'
+                  - type: object
+                    properties:
+                      token:
+                        type: string
+                      user:
+                        $ref: '#/components/schemas/User'
+        '401':
+          description: Identifiants invalides
+        '403':
+          description: Compte non vendeur — accès refusé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  # ─── PRODUCTS ───────────────────────────────────────────────────────────────
 
   /products:
     get:
-      summary: Liste des produits
-      tags: [Catalog]
+      tags: [Products]
+      summary: Lister tous les produits (public)
+      parameters:
+        - name: category_id
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Filtrer par catégorie
       responses:
-        200:
-          description: Liste de produits
+        '200':
+          description: Liste des produits
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Product'
+
+    post:
+      tags: [Products]
+      summary: Créer un produit (vendeur authentifié)
+      security:
+        - sanctumAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, description, prix, categorie_id, variants, images]
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                prix:
+                  type: number
+                categorie_id:
+                  type: integer
+                variants:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      taille:
+                        type: string
+                      couleur:
+                        type: string
+                      sku:
+                        type: string
+                      stock:
+                        type: integer
+                images:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      url_image:
+                        type: string
+                      is_principal:
+                        type: boolean
+      responses:
+        '201':
+          description: Produit créé
+        '401':
+          description: Non authentifié
+        '422':
+          description: Données invalides
+
+  /products/{id}:
+    get:
+      tags: [Products]
+      summary: Détails d'un produit (public)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Produit trouvé
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Product'
+        '404':
+          description: Produit introuvable
+
+    put:
+      tags: [Products]
+      summary: Mettre à jour un produit
+      security:
+        - sanctumAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                prix:
+                  type: number
+                variants:
+                  type: array
+                  items:
+                    type: object
+                images:
+                  type: array
+                  items:
+                    type: object
+      responses:
+        '200':
+          description: Produit mis à jour
+
+    delete:
+      tags: [Products]
+      summary: Supprimer un produit
+      security:
+        - sanctumAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Produit supprimé
+        '404':
+          description: Produit introuvable
+
+  # ─── CATEGORIES ─────────────────────────────────────────────────────────────
+
+  /categories:
+    get:
+      tags: [Categories]
+      summary: Lister les catégories (public)
+      responses:
+        '200':
+          description: Liste des catégories
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Categorie'
+
+    post:
+      tags: [Categories]
+      summary: Créer une catégorie
+      security:
+        - sanctumAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nom]
+              properties:
+                nom:
+                  type: string
+                  example: Accessoires
+      responses:
+        '201':
+          description: Catégorie créée
+
+  # ─── PAYMENT & ESCROW ────────────────────────────────────────────────────────
 
   /payment/verify:
     post:
-      summary: Vérification d'un paiement FedaPay (Escrow)
-      tags: [Payment]
+      tags: [Payment & Escrow]
+      summary: >
+        Vérifier un paiement FedaPay et bloquer les fonds en escrow.
+        Public — ne requiert pas d'authentification (paiements invités supportés).
+        Les vendeurs/admins sont rejetés (403).
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
               required: [transaction_id]
               properties:
-                transaction_id: { type: integer }
-                customer_email: { type: string }
-                cart: { type: array, items: { type: object } }
+                transaction_id:
+                  type: string
+                  description: ID de transaction FedaPay
+                  example: "998877"
+                customer_email:
+                  type: string
+                  format: email
+                  example: client@example.com
+                amount:
+                  type: number
+                  description: Montant côté client (sera vérifié côté serveur)
+                  example: 25000
+                cart:
+                  type: array
+                  description: Articles du panier
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                        description: ID Produit
+                      quantity:
+                        type: integer
       responses:
-        200:
-          description: Paiement validé et placé en séquestre
+        '200':
+          description: Paiement validé — fonds en escrow
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiSuccess'
+                  - type: object
+                    properties:
+                      transaction_id:
+                        type: integer
+                        description: ID DB de la transaction créée
+        '400':
+          description: Paiement non approuvé par FedaPay
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Compte vendeur/admin — achat non autorisé
+        '422':
+          description: Paramètres manquants
+        '500':
+          description: Erreur FedaPay
 
   /seller/escrow/pending:
     get:
-      summary: Lister les fonds en attente de déblocage (Vendeur)
-      tags: [Escrow]
+      tags: [Payment & Escrow]
+      summary: Transactions en attente de payout pour le vendeur connecté
       security:
-        - Sanctum: []
+        - sanctumAuth: []
       responses:
-        200:
-          description: Liste des transactions "held"
+        '200':
+          description: Liste des transactions escrow 'held'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Transaction'
+        '401':
+          description: Non authentifié
+        '403':
+          description: Rôle insuffisant (vendeur/admin requis)
 
   /seller/escrow/release/{transactionId}:
     post:
-      summary: Libérer les fonds vers le compte du vendeur (Payout)
-      tags: [Escrow]
+      tags: [Payment & Escrow]
+      summary: >
+        Libérer les fonds d'une transaction (déclenche un virement FedaPay réel).
+        Réservé au vendeur propriétaire de la transaction.
       security:
-        - Sanctum: []
+        - sanctumAuth: []
       parameters:
         - name: transactionId
           in: path
           required: true
-          schema: { type: integer }
+          schema:
+            type: integer
       responses:
-        200:
-          description: Virement initié et fonds débloqués
+        '200':
+          description: Fonds libérés avec succès
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiSuccess'
+        '400':
+          description: Transaction non éligible (déjà libérée ou en litige)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Rôle insuffisant
+        '404':
+          description: Transaction introuvable
+        '500':
+          description: Erreur FedaPay Payout
+
+  /transactions/{id}/logs:
+    get:
+      tags: [Payment & Escrow]
+      summary: Journal d'audit d'une transaction (acheteur, vendeur ou admin uniquement)
+      security:
+        - sanctumAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Historique des événements
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TransactionLog'
+        '403':
+          description: Accès refusé
+        '404':
+          description: Transaction introuvable
+
+  # ─── LITIGES ────────────────────────────────────────────────────────────────
+
+  /litiges:
+    post:
+      tags: [Litiges]
+      summary: Ouvrir un litige sur une transaction (acheteur)
+      security:
+        - sanctumAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [transaction_id, raison, description]
+              properties:
+                transaction_id:
+                  type: integer
+                  example: 12
+                raison:
+                  type: string
+                  enum: [non_recu, non_conforme, defectueux, autre]
+                  example: non_recu
+                description:
+                  type: string
+                  minLength: 20
+                  maxLength: 2000
+                  example: "J'ai attendu 3 semaines mais le colis n'est jamais arrivé."
+      responses:
+        '201':
+          description: Litige ouvert — fonds bloqués jusqu'à résolution
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiSuccess'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Litige'
+        '409':
+          description: Un litige est déjà en cours sur cette transaction
+        '422':
+          description: Escrow non actif ou données invalides
+
+  /seller/litiges:
+    get:
+      tags: [Litiges]
+      summary: Litiges liés aux transactions du vendeur connecté
+      security:
+        - sanctumAuth: []
+      responses:
+        '200':
+          description: Liste des litiges vendeur
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Litige'
+
+  /admin/litiges:
+    get:
+      tags: [Litiges]
+      summary: Tous les litiges de la plateforme (admin)
+      security:
+        - sanctumAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [ouverte, en_cours, resolue_vendeur, resolue_acheteur, fermee]
+      responses:
+        '200':
+          description: Liste paginée des litiges
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    description: Réponse paginée Laravel
+
+  /admin/litiges/{id}:
+    get:
+      tags: [Litiges]
+      summary: Détail d'un litige (admin)
+      security:
+        - sanctumAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Détail du litige avec commande et parties
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Litige'
+        '404':
+          description: Litige introuvable
+
+  /admin/litiges/{id}/resolve:
+    patch:
+      tags: [Litiges]
+      summary: Résoudre un litige — en faveur du vendeur ou de l'acheteur
+      security:
+        - sanctumAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision, resolution_note]
+              properties:
+                decision:
+                  type: string
+                  enum: [resolue_vendeur, resolue_acheteur]
+                  description: >
+                    resolue_vendeur → fonds libérés au vendeur (Payout FedaPay).
+                    resolue_acheteur → remboursement initié pour l'acheteur.
+                resolution_note:
+                  type: string
+                  minLength: 10
+                  maxLength: 2000
+                  example: "Preuve de livraison fournie par le vendeur. Fonds libérés."
+      responses:
+        '200':
+          description: Litige résolu
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiSuccess'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Litige'
+        '409':
+          description: Litige déjà résolu
+        '422':
+          description: Données invalides
+
+  # ─── WEBHOOK ────────────────────────────────────────────────────────────────
+
+  /webhook/fedapay:
+    post:
+      tags: [Webhooks]
+      summary: >
+        Point d'entrée des événements FedaPay.
+        Non protégé par Sanctum — sécurisé par signature HMAC-SHA256
+        (header X-FedaPay-Signature).
+      parameters:
+        - name: X-FedaPay-Signature
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Signature HMAC fournie par FedaPay pour vérifier l'authenticité
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Nom de l'événement FedaPay
+                  example: transaction.approved
+                transaction:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    status:
+                      type: string
+                    amount:
+                      type: number
+                    currency:
+                      type: object
+                      properties:
+                        iso:
+                          type: string
+                          example: XOF
+      responses:
+        '200':
+          description: Webhook reçu et traité
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  received:
+                    type: boolean
+                    example: true
+        '401':
+          description: Signature HMAC invalide

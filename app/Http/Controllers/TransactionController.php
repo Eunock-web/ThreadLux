@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Transaction;
+use App\Services\TransactionLogger;
 use FedaPay\FedaPay;
 use FedaPay\Transaction as FedaTransaction;
 use Illuminate\Http\Request;
@@ -20,6 +21,16 @@ class TransactionController extends Controller
             $transactionId = $request->input('transaction_id');
             $customerEmail = $request->input('customer_email');
             $amount = $request->input('amount');
+
+            // Security: Vendors and Admins are NOT allowed to make purchases.
+            // This ensures clean escrow separation.
+            $user = auth('sanctum')->user();
+            if ($user && in_array($user->role, ['vendeur', 'admin'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Les comptes vendeurs/admins ne sont pas autorisés à effectuer des achats.',
+                ], 403);
+            }
 
             if (!$transactionId) {
                 return response()->json(['success' => false, 'message' => 'transaction_id requis'], 422);
@@ -44,14 +55,17 @@ class TransactionController extends Controller
                 'vendeur_id' => $vendeurId,
             ]);
 
+            // Auto-release delay from config (default: 7 days)
+            $autoReleaseDays = (int) env('ESCROW_AUTO_RELEASE_DAYS', 7);
+
             // 4. Persist the transaction (best-effort — won't block checkout on DB error)
-            $transaction = null;  // Initialize $transaction to null
+            $transaction = null;
             try {
                 $transaction = Transaction::updateOrCreate(
                     ['provider_ref' => (string) $transactionId],
                     [
                         'reference' => 'TLX-' . strtoupper(substr(md5($transactionId), 0, 8)),
-                        'acheteur_id' => auth('sanctum')->id() ?? null,  // use sanctum guard explicitly on public route
+                        'acheteur_id' => auth('sanctum')->id() ?? null,
                         'vendeur_id' => $vendeurId,
                         'amount' => $fedaTransaction->amount ?? $amount,
                         'currency' => $fedaTransaction->currency->iso ?? 'XOF',
@@ -60,12 +74,24 @@ class TransactionController extends Controller
                         'status' => $fedaTransaction->status,
                         'escrow_status' => ($fedaTransaction->status === 'approved') ? 'held' : 'none',
                         'escrow_held_at' => ($fedaTransaction->status === 'approved') ? now() : null,
+                        'auto_release_at' => ($fedaTransaction->status === 'approved') ? now()->addDays($autoReleaseDays) : null,
                         'description' => "Commande client: {$customerEmail}",
                     ]
                 );
+
+                // Log the transaction creation event
+                if ($transaction && $fedaTransaction->status === 'approved') {
+                    TransactionLogger::log(
+                        $transaction,
+                        'transaction.created',
+                        auth('sanctum')->user(),
+                        "Transaction créée et fonds mis en escrow. FedaPay ref: {$transactionId}. Auto-release prévu dans {$autoReleaseDays} jours.",
+                        ['provider_ref' => $transactionId, 'fedapay_status' => $fedaTransaction->status]
+                    );
+                }
+
                 Log::info('Transaction saved to DB', ['provider_ref' => $transactionId, 'transaction_db_id' => $transaction->id]);
             } catch (\Exception $dbErr) {
-                // Log but don't fail the checkout — payment IS approved on FedaPay's side
                 Log::warning('Transaction DB save failed (non-critical)', [
                     'provider_ref' => $transactionId,
                     'error' => $dbErr->getMessage(),
@@ -132,13 +158,17 @@ class TransactionController extends Controller
 
     public function getPendingPayouts()
     {
-        $seller = auth()->user();
-
-        $payouts = Transaction::where('vendeur_id', $seller->id)
-            ->where('escrow_status', 'held')
+        $user = auth()->user();
+        $query = Transaction::where('escrow_status', 'held')
             ->with(['commande.items.produit', 'acheteur'])
-            ->orderBy('created_at', 'desc')
-            ->get();
+            ->orderBy('created_at', 'desc');
+
+        // Admin sees all, Vendeur only sees their own
+        if ($user->role !== 'admin') {
+            $query->where('vendeur_id', $user->id);
+        }
+
+        $payouts = $query->get();
 
         return response()->json([
             'success' => true,
@@ -146,19 +176,26 @@ class TransactionController extends Controller
         ]);
     }
 
-    public function Payout($transactionId)
+    public function Payout(Request $request, $transactionId)
     {
-        $seller = auth()->user();
+        $user = auth()->user();
 
         // 1. Find the transaction
-        $transaction = Transaction::where('id', $transactionId)
-            ->where('vendeur_id', $seller->id)
-            ->firstOrFail();
+        $query = Transaction::where('id', $transactionId);
+
+        // Admin can release anything, Vendeur only their own
+        if ($user->role !== 'admin') {
+            $query->where('vendeur_id', $user->id);
+        }
+
+        $transaction = $query->firstOrFail();
 
         if ($transaction->escrow_status !== 'held') {
             return response()->json([
                 'success' => false,
-                'message' => "Cette transaction n'est pas en attente de déblocage."
+                'message' => $transaction->escrow_status === 'en_litige'
+                    ? 'Cette transaction est en litige. Veuillez attendre la résolution avant de libérer les fonds.'
+                    : "Cette transaction n'est pas en attente de déblocage.",
             ], 400);
         }
 
@@ -168,42 +205,59 @@ class TransactionController extends Controller
 
         try {
             // 3. Trigger FedaPay Payout (Real transfer)
-            // Note: In sandbox, this simulates a transfer.
+            $vendor = $transaction->vendeur;
+            $payoutPhone = $request->input('phone_number') ?? ($vendor ? $vendor->phone : null);
+
+            if (!$payoutPhone) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Le numéro de téléphone pour le payout n'est pas configuré.",
+                ], 422);
+            }
+
+            // Basic Benin Network Detection (10-digit support for 01 plan)
+            $cleanNumber = preg_replace('/[^0-9]/', '', $payoutPhone);
+            if (strlen($cleanNumber) === 10 && str_starts_with($cleanNumber, '01')) {
+                $checkNumber = substr($cleanNumber, 2);
+            } else {
+                $checkNumber = $cleanNumber;
+            }
+
+            $prefix = substr($checkNumber, 0, 2);
+            $moovPrefixes = ['60', '63', '64', '65', '94', '95'];
+            $payoutMode = in_array($prefix, $moovPrefixes) ? 'moov' : 'mtn';
+
             try {
                 $payout = \FedaPay\Payout::create([
                     'amount' => (int) $transaction->amount,
-                    'currency' => ['iso' => $transaction->currency],
-                    'mode' => $transaction->payment_method === 'mobile_money' ? 'mtn' : 'moov',  // simplified logic
+                    'currency' => ['iso' => $transaction->currency ?? 'XOF'],
+                    'mode' => $payoutMode,
                     'customer' => [
-                        'firstname' => $seller->firstname,
-                        'lastname' => $seller->lastname,
-                        'email' => $seller->email,
+                        'firstname' => $vendor ? $vendor->firstname : 'Vendeur',
+                        'lastname' => $vendor ? $vendor->lastname : 'Inconnu',
+                        'email' => $vendor ? $vendor->email : 'support@threadlux.com',
                         'phone_number' => [
-                            'number' => $seller->phone ?? '66000000',  // Default for test if null
+                            'number' => $cleanNumber,
                             'country' => 'bj'
                         ]
                     ],
                     'description' => "Payout pour la transaction {$transaction->reference}"
                 ]);
 
-                // Start the payout (official PHP SDK way)
                 \FedaPay\Payout::start($payout->id);
 
                 Log::info('FedaPay Payout successful', [
                     'transaction_id' => $transactionId,
-                    'payout_id' => $payout->id
+                    'payout_id' => $payout->id,
+                    'vendor_id' => $vendor->id
                 ]);
             } catch (\Exception $fedaErr) {
-                // Simulation is ONLY for sandbox
-                $isLive = env('FEDAPAY_ENVIRONMENT') === 'live';
-
-                if (!$isLive && (str_contains($fedaErr->getMessage(), 'autorisée') || str_contains($fedaErr->getMessage(), 'active'))) {
-                    Log::warning('FedaPay Payout feature not active on account. SIMULATING SUCCESS for dev.', [
-                        'error' => $fedaErr->getMessage()
-                    ]);
-                } else {
-                    throw $fedaErr;  // Re-throw in live or for other errors
-                }
+                // In live mode, we don't simulate unless explicitly requested for testing
+                Log::error('FedaPay Payout API error', [
+                    'error' => $fedaErr->getMessage(),
+                    'transaction_id' => $transactionId
+                ]);
+                throw $fedaErr;
             }
 
             // 4. Update Database
@@ -217,31 +271,33 @@ class TransactionController extends Controller
                 $transaction->commande->update(['escrow_status' => 'released']);
             }
 
-            // 5. Send Email Notifications
-            try {
-                // To Seller
-                \Illuminate\Support\Facades\Mail::to($seller->email)
-                    ->send(new \App\Mail\PayoutReleasedSeller($transaction));
+            // 5. Log the manual payout event
+            TransactionLogger::log(
+                $transaction->fresh(),
+                'escrow.released',
+                $user,
+                "Fonds débloqués manuellement pour le vendeur {$vendor->firstname} {$vendor->lastname}.",
+                ['released_by' => $user->role, 'actor_id' => $user->id, 'vendor_id' => $vendor->id]
+            );
 
-                // To Buyer (if exists)
+            // 6. Send Email Notifications
+            try {
+                \Illuminate\Support\Facades\Mail::to($vendor->email)
+                    ->queue(new \App\Mail\PayoutReleasedSeller($transaction));
+
                 if ($transaction->acheteur) {
                     \Illuminate\Support\Facades\Mail::to($transaction->acheteur->email)
-                        ->send(new \App\Mail\PayoutReleasedBuyer($transaction));
+                        ->queue(new \App\Mail\PayoutReleasedBuyer($transaction));
                 }
 
-                Log::info('Payout notification emails sent');
+                Log::info('Payout notification emails queued');
             } catch (\Exception $mailErr) {
-                Log::error('Payout notification emails failed', ['error' => $mailErr->getMessage()]);
-                // Don't fail the whole request if only emails failed
+                Log::error('Payout notification emails failed to queue', ['error' => $mailErr->getMessage()]);
             }
-
-            $msg = env('FEDAPAY_ENVIRONMENT') === 'live'
-                ? 'Fonds débloqués avec succès.'
-                : 'Fonds débloqués avec succès. (Mode simulation)';
 
             return response()->json([
                 'success' => true,
-                'message' => $msg
+                'message' => 'Fonds débloqués avec succès.'
             ]);
         } catch (\Exception $e) {
             Log::error('FedaPay Payout failed', [
@@ -254,5 +310,46 @@ class TransactionController extends Controller
                 'message' => 'Erreur lors du virement FedaPay : ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * GET /api/transactions/{id}/logs
+     * Returns the full audit trail (status change history) for a transaction.
+     */
+    public function getLogs(int $id)
+    {
+        $user = auth()->user();
+
+        $transaction = Transaction::findOrFail($id);
+
+        // Only the buyer, seller, or admin of this transaction can view logs
+        if (
+            $transaction->acheteur_id !== $user->id &&
+            $transaction->vendeur_id !== $user->id &&
+            !in_array($user->role, ['admin', 'vendeur'])
+        ) {
+            return response()->json(['success' => false, 'message' => 'Accès refusé.'], 403);
+        }
+
+        $logs = $transaction
+            ->logs()
+            ->with('user')
+            ->orderBy('created_at', 'asc')
+            ->get()
+            ->map(fn($log) => [
+                'id' => $log->id,
+                'event_type' => $log->event_type,
+                'status' => $log->status,
+                'description' => $log->description,
+                'actor' => $log->metadata['actor'] ?? 'system',
+                'actor_role' => $log->metadata['role'] ?? 'system',
+                'payload' => $log->payload,
+                'created_at' => $log->created_at?->toIso8601String(),
+            ]);
+
+        return response()->json([
+            'success' => true,
+            'data' => $logs,
+        ]);
     }
 }

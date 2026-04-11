@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Commande;
+use App\Models\Litige;
 use App\Models\Log;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -27,12 +28,14 @@ class Transaction extends Model
         'escrow_status',
         'escrow_held_at',
         'escrow_released_at',
+        'auto_release_at',
         'description',
     ];
 
     protected $casts = [
         'escrow_held_at' => 'datetime',
         'escrow_released_at' => 'datetime',
+        'auto_release_at' => 'datetime',
     ];
 
     public function acheteur()
@@ -53,5 +56,10 @@ class Transaction extends Model
     public function logs()
     {
         return $this->hasMany(Log::class);
+    }
+
+    public function litiges()
+    {
+        return $this->hasMany(Litige::class);
     }
 }
