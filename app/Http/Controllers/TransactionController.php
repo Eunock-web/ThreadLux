@@ -55,7 +55,8 @@ class TransactionController extends Controller
                 'vendeur_id' => $vendeurId,
             ]);
 
-            // Auto-release delay from config (default: 7 days)
+            // Auto-release delay from config (default: 1 minute for testing, or use days)
+            $autoReleaseMinutes = (int) env('ESCROW_AUTO_RELEASE_MINUTES', 0);
             $autoReleaseDays = (int) env('ESCROW_AUTO_RELEASE_DAYS', 7);
 
             // 4. Persist the transaction (best-effort — won't block checkout on DB error)
@@ -74,7 +75,9 @@ class TransactionController extends Controller
                         'status' => $fedaTransaction->status,
                         'escrow_status' => ($fedaTransaction->status === 'approved') ? 'held' : 'none',
                         'escrow_held_at' => ($fedaTransaction->status === 'approved') ? now() : null,
-                        'auto_release_at' => ($fedaTransaction->status === 'approved') ? now()->addDays($autoReleaseDays) : null,
+                        'auto_release_at' => ($fedaTransaction->status === 'approved')
+                            ? ($autoReleaseMinutes > 0 ? now()->addMinutes($autoReleaseMinutes) : now()->addDays($autoReleaseDays))
+                            : null,
                         'description' => "Commande client: {$customerEmail}",
                     ]
                 );

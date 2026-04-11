@@ -95,12 +95,11 @@ class ReleaseExpiredEscrows implements ShouldQueue
                     $transaction->fresh(),
                     'escrow.auto_released',
                     null,
-                    "Reversement automatique déclenché après expiration du délai de {$this->getReleaseDelayDays()} jours. "
+                    'Reversement automatique déclenché après expiration du délai. '
                         . "Aucun litige ouvert par l'acheteur.",
                     [
                         'auto_release_at' => $transaction->auto_release_at?->toIso8601String(),
                         'released_at' => now()->toIso8601String(),
-                        'delay_days' => $this->getReleaseDelayDays(),
                     ]
                 );
 

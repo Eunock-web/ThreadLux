@@ -22,4 +22,4 @@ Artisan::command('inspire', function () {
  * Test manually: php artisan schedule:run
  * Or directly:   php artisan schedule:test
  */
-Schedule::job(new ReleaseExpiredEscrows)->daily()->name('release-expired-escrows');
+Schedule::job(new ReleaseExpiredEscrows)->everyMinute()->name('release-expired-escrows');

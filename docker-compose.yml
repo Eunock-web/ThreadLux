@@ -1,0 +1,35 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: threadlux-api
+    ports:
+      - "8080:80"
+    volumes:
+      - .:/var/www
+    environment:
+      - DB_CONNECTION=pgsql
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_DATABASE=ThreadLux
+      - DB_USERNAME=postgres
+      - DB_PASSWORD=lightyagami
+    depends_on:
+      - db
+
+  db:
+    image: postgres:15-alpine
+    container_name: threadlux-db
+    restart: always
+    environment:
+      POSTGRES_DB: ThreadLux
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: lightyagami
+    ports:
+      - "5433:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+volumes:
+  db_data:
