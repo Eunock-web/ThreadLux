@@ -196,12 +196,21 @@ class TransactionController extends Controller
         try {
             // 3. Trigger FedaPay Payout (Real transfer)
             $vendor = $transaction->vendeur;
-            $payoutPhone = $request->input('phone_number') ?? ($vendor ? $vendor->phone : null);
+
+            if (!$vendor) {
+                Log::error('Payout failed: no vendor associated with transaction', ['transaction_id' => $transactionId]);
+                return response()->json([
+                    'success' => false,
+                    'message' => "Impossible de traiter le virement : aucun vendeur n'est associé à cette transaction."
+                ], 422);
+            }
+
+            $payoutPhone = $request->input('phone_number') ?? $vendor->phone;
 
             if (!$payoutPhone) {
                 return response()->json([
                     'success' => false,
-                    'message' => "Le numéro de téléphone pour le payout n'est pas configuré.",
+                    'message' => "Le numéro de téléphone pour le reversement n'est pas configuré.",
                 ], 422);
             }
 
@@ -230,9 +239,9 @@ class TransactionController extends Controller
                     'currency' => ['iso' => $transaction->currency ?? 'XOF'],
                     'mode' => $payoutMode,
                     'customer' => [
-                        'firstname' => $vendor ? $vendor->firstname : 'Vendeur',
-                        'lastname' => $vendor ? $vendor->lastname : 'Inconnu',
-                        'email' => $vendor ? $vendor->email : 'support@threadlux.com',
+                        'firstname' => $vendor->firstname ?? 'Vendeur',
+                        'lastname' => $vendor->lastname ?? 'ThreadLux',
+                        'email' => $vendor->email ?? 'support@threadlux.com',
                         'phone_number' => [
                             'number' => $cleanNumber,
                             'country' => 'bj'
@@ -256,7 +265,11 @@ class TransactionController extends Controller
                     'transaction_id' => $transactionId,
                     'trace' => $fedaErr->getTraceAsString()
                 ]);
-                throw $fedaErr;
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Erreur API FedaPay : ' . $fedaErr->getMessage()
+                ], 502);  // Use 502 for external provider issues
             }
 
             // 4. Update Database
@@ -275,16 +288,18 @@ class TransactionController extends Controller
                 $transaction->fresh(),
                 'escrow.released',
                 $user,
-                "Fonds débloqués manuellement pour le vendeur {$vendor->firstname} {$vendor->lastname}.",
+                'Fonds débloqués manuellement pour le vendeur ' . ($vendor->firstname ?? 'Inconnu'),
                 ['released_by' => $user->role, 'actor_id' => $user->id, 'vendor_id' => $vendor->id]
             );
 
             // 6. Send Email Notifications
             try {
-                \Illuminate\Support\Facades\Mail::to($vendor->email)
-                    ->queue(new \App\Mail\PayoutReleasedSeller($transaction));
+                if ($vendor->email) {
+                    \Illuminate\Support\Facades\Mail::to($vendor->email)
+                        ->queue(new \App\Mail\PayoutReleasedSeller($transaction));
+                }
 
-                if ($transaction->acheteur) {
+                if ($transaction->acheteur && $transaction->acheteur->email) {
                     \Illuminate\Support\Facades\Mail::to($transaction->acheteur->email)
                         ->queue(new \App\Mail\PayoutReleasedBuyer($transaction));
                 }
