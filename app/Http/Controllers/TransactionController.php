@@ -218,6 +218,13 @@ class TransactionController extends Controller
             $payoutMode = in_array($prefix, $moovPrefixes) ? 'moov' : 'mtn';
 
             try {
+                Log::info('Initiating FedaPay Payout', [
+                    'transaction_id' => $transactionId,
+                    'amount' => $transaction->amount,
+                    'mode' => $payoutMode,
+                    'phone' => $cleanNumber
+                ]);
+
                 $payout = \FedaPay\Payout::create([
                     'amount' => (int) $transaction->amount,
                     'currency' => ['iso' => $transaction->currency ?? 'XOF'],
@@ -234,18 +241,20 @@ class TransactionController extends Controller
                     'description' => "Payout pour la transaction {$transaction->reference}"
                 ]);
 
+                Log::info('FedaPay Payout created, starting...', ['payout_id' => $payout->id]);
+
                 \FedaPay\Payout::start($payout->id);
 
-                Log::info('FedaPay Payout successful', [
+                Log::info('FedaPay Payout started successfully', [
                     'transaction_id' => $transactionId,
                     'payout_id' => $payout->id,
                     'vendor_id' => $vendor->id
                 ]);
             } catch (\Exception $fedaErr) {
-                // In live mode, we don't simulate unless explicitly requested for testing
                 Log::error('FedaPay Payout API error', [
                     'error' => $fedaErr->getMessage(),
-                    'transaction_id' => $transactionId
+                    'transaction_id' => $transactionId,
+                    'trace' => $fedaErr->getTraceAsString()
                 ]);
                 throw $fedaErr;
             }
