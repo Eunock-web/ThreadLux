@@ -5,7 +5,7 @@
 LOCAL_DB_HOST="localhost"
 LOCAL_DB_PORT="5432"
 LOCAL_DB_USER="postgres"
-LOCAL_DB_NAME="threadlux"
+LOCAL_DB_NAME="ThreadLux"
 
 echo "=== Scripts de Migration des données (Local -> Render) ==="
 echo ""
