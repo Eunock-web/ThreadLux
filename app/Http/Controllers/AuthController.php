@@ -60,6 +60,41 @@ class AuthController extends Controller
     }
 
     /**
+     * Log in a vendor/admin user. Rejects clients.
+     */
+    public function adminLogin(LoginRequest $request): JsonResponse
+    {
+        $credentials = $request->validated();
+
+        $user = User::where('email', $credentials['email'])->first();
+
+        if (!$user || !Hash::check($credentials['password'], $user->password)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Email ou mot de passe incorrect',
+            ], 401);
+        }
+
+        if (!in_array($user->role, ['vendeur', 'admin'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Accès refusé. Seuls les vendeurs peuvent accéder au tableau de bord.',
+            ], 403);
+        }
+
+        $user->tokens()->delete();
+
+        $token = $user->createToken('api-token')->plainTextToken;
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Connexion vendeur réussie',
+            'token' => $token,
+            'user' => $user,
+        ]);
+    }
+
+    /**
      * Log out the current user by revoking their token.
      */
     public function logout(Request $request): JsonResponse

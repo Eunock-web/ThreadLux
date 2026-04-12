@@ -161,17 +161,10 @@ class TransactionController extends Controller
 
     public function getPendingPayouts()
     {
-        $user = auth()->user();
-        $query = Transaction::where('escrow_status', 'held')
+        $payouts = Transaction::where('escrow_status', 'held')
             ->with(['commande.items.produit', 'acheteur'])
-            ->orderBy('created_at', 'desc');
-
-        // Admin sees all, Vendeur only sees their own
-        if ($user->role !== 'admin') {
-            $query->where('vendeur_id', $user->id);
-        }
-
-        $payouts = $query->get();
+            ->orderBy('created_at', 'desc')
+            ->get();
 
         return response()->json([
             'success' => true,
@@ -184,14 +177,8 @@ class TransactionController extends Controller
         $user = auth()->user();
 
         // 1. Find the transaction
-        $query = Transaction::where('id', $transactionId);
-
-        // Admin can release anything, Vendeur only their own
-        if ($user->role !== 'admin') {
-            $query->where('vendeur_id', $user->id);
-        }
-
-        $transaction = $query->firstOrFail();
+        $transaction = Transaction::where('id', $transactionId)
+            ->firstOrFail();
 
         if ($transaction->escrow_status !== 'held') {
             return response()->json([

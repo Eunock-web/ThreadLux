@@ -2,7 +2,6 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
@@ -17,7 +16,7 @@ class DatabaseSeeder extends Seeder
     {
         // Create 5 users first if they don't exist
         if (\App\Models\User::count() === 0) {
-            \App\Models\User::factory(5)->create();
+            \App\Models\User::factory(1)->create();
         }
 
         // Call dedicated seeders

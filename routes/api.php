@@ -1,6 +1,5 @@
 <?php
 
-use App\Http\Controllers\AdminAuthController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\LitigeController;
 use App\Http\Controllers\TransactionController;
@@ -15,9 +14,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
-
-// Dedicated vendor/admin login — rejects non-vendeur accounts
-Route::post('/admin/login', [AdminAuthController::class, 'login']);
+Route::post('/admin/login', [AuthController::class, 'adminLogin']);
 
 Route::get('/products', [\App\Http\Controllers\products\ProductController::class, 'index']);
 Route::get('/products/{product}', [\App\Http\Controllers\products\ProductController::class, 'getProduct']);
@@ -43,7 +40,9 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     // Products (Protected methods)
-    Route::apiResource('products', \App\Http\Controllers\products\ProductController::class)->except(['index', 'show']);
+    Route::apiResource('products', \App\Http\Controllers\products\ProductController::class)
+        ->except(['index', 'show'])
+        ->middleware('role:vendeur');
 
     // Favoris
     Route::post('/favoris/{variantId}', [\App\Http\Controllers\products\FavorisController::class, 'addFavoris']);
@@ -51,7 +50,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/favoris', [\App\Http\Controllers\products\FavorisController::class, 'getFavoris']);
 
     // Categories (Protected methods)
-    Route::apiResource('categories', \App\Http\Controllers\CategorieController::class)->except(['index', 'show']);
+    Route::apiResource('categories', \App\Http\Controllers\CategorieController::class)
+        ->except(['index', 'show'])
+        ->middleware('role:vendeur');
 
     // Escrow / Payouts (Sellers only)
     Route::middleware('role:vendeur,admin')->prefix('seller/escrow')->group(function () {
